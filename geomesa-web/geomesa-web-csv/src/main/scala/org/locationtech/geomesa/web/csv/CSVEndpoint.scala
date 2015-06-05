@@ -20,9 +20,7 @@ import java.io.{ByteArrayOutputStream, OutputStream, BufferedOutputStream, File}
 import java.net.URL
 import java.nio.charset.Charset
 import java.util.UUID
-import java.util.concurrent.TimeUnit
 
-import com.google.common.cache._
 import com.typesafe.scalalogging.slf4j.Logging
 import org.apache.commons.io.FilenameUtils
 import org.geotools.GML
@@ -30,7 +28,7 @@ import org.geotools.gml.producer.FeatureTransformer
 import org.locationtech.geomesa.accumulo.{TypeSchema, csv}
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.locationtech.geomesa.web.core.GeoMesaScalatraServlet
-import org.locationtech.geomesa.web.scalatra.{User, PkiAuthenticationSupport}
+import org.locationtech.geomesa.web.scalatra.PkiAuthenticationSupport
 import org.scalatra._
 import org.scalatra.servlet.{FileUploadSupport, MultipartConfig, SizeConstraintExceededException}
 
@@ -55,22 +53,12 @@ class CSVEndpoint extends GeoMesaScalatraServlet with FileUploadSupport with Log
     case e: SizeConstraintExceededException => RequestEntityTooLarge("Uploaded file too large!")
   }
 
-  class Record(val csvFile: File, val hasHeader: Boolean, var schema: TypeSchema)
+  import CSVUploadCache._
 
-  val records: Cache[RecordTag, Record] = {
-    val removalListener = new RemovalListener[RecordTag, Record]() {
-      override def onRemoval(notification: RemovalNotification[RecordTag, Record]) =
-        cleanup(notification.getKey, notification.getValue)
-    }
-    CacheBuilder.newBuilder()
-        .expireAfterAccess(1, TimeUnit.HOURS)
-        .removalListener(removalListener)
-        .build()
-  }
+  val csvUploadCache = new CSVUploadCache
 
-  case class RecordTag(userId: Option[User], csvId: String)
-  private[this] def getUser = scentry.authenticate("Pki")
-  private[this] def getRecordTag = RecordTag(getUser, params("csvid"))
+  private[this] def getUserName  = scentry.authenticate("Pki").map(_.dn)
+  private[this] def getRecordTag = RecordTag(getUserName, params("csvid"))
 
   post("/") {
     try {
@@ -80,8 +68,8 @@ class CSVEndpoint extends GeoMesaScalatraServlet with FileUploadSupport with Log
       val hasHeader = params.get("hasHeader").map(_.toBoolean).getOrElse(true)
       val schema = csv.guessTypes(csvFile, hasHeader)
       val csvId = UUID.randomUUID.toString
-      val tag = RecordTag(getUser, csvId)
-      records.put(tag, new Record(csvFile, hasHeader, schema))
+      csvUploadCache.store(RecordTag(getUserName, csvId),
+                           Record(csvFile, hasHeader, schema))
       Ok(csvId)
     } catch {
       case ex: Throwable =>
@@ -92,7 +80,7 @@ class CSVEndpoint extends GeoMesaScalatraServlet with FileUploadSupport with Log
 
   get("/types/:csvid") {
     val tag = getRecordTag
-    val record = records.getIfPresent(tag)
+    val record = csvUploadCache.load(tag)
     if (record == null) {
       NotFound()
     } else {
@@ -103,21 +91,21 @@ class CSVEndpoint extends GeoMesaScalatraServlet with FileUploadSupport with Log
 
   post("/types/update/:csvid") {
     val tag = getRecordTag
-    val record = records.getIfPresent(tag)
+    val record = csvUploadCache.load(tag)
     if (record == null) {
       BadRequest(reason = s"Could not find record ${tag.csvId} for user ${tag.userId}")
     } else {
       val name = params.getOrElse("name", record.schema.name)
       val schema = params.getOrElse("schema", record.schema.schema)
       val latLon = for (latf <- params.get("latField"); lonf <- params.get("lonField")) yield (latf, lonf)
-      record.schema = TypeSchema(name, schema, latLon)
+      csvUploadCache.store(tag, record.copy(schema = TypeSchema(name, schema, latLon)))
       Ok()
     }
   }
 
   get("/:csvid.gml") {
     val tag = getRecordTag
-    val record = records.getIfPresent(tag)
+    val record = csvUploadCache.load(tag)
     if (record == null) {
       NotFound()
     } else {
@@ -156,7 +144,7 @@ class CSVEndpoint extends GeoMesaScalatraServlet with FileUploadSupport with Log
 
   get("/:csvid.xsd") {
     val tag = getRecordTag
-    val record = records.getIfPresent(tag)
+    val record = csvUploadCache.load(tag)
     if (record == null) {
       NotFound()
     } else {
@@ -186,18 +174,13 @@ class CSVEndpoint extends GeoMesaScalatraServlet with FileUploadSupport with Log
 
   post("/delete/:csvid.csv") {
     val tag = getRecordTag
-    Option(records.getIfPresent(tag)).foreach(cleanup(tag, _))
+    csvUploadCache.clear(tag)
     Ok()
   }
 
   delete("/:csvid.csv") {
     val tag = getRecordTag
-    Option(records.getIfPresent(tag)).foreach(cleanup(tag, _))
+    csvUploadCache.clear(tag)
     Ok()
-  }
-
-  private def cleanup(tag: RecordTag, record: Record) {
-    record.csvFile.delete()
-    records.invalidate(tag)
   }
 }
