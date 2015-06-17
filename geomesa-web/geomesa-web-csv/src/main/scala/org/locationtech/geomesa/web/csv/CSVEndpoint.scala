@@ -43,7 +43,11 @@ import org.scalatra.servlet.{FileUploadSupport, MultipartConfig, SizeConstraintE
 //    the end user can just pass the head of their csv to minimize transfers
 // 2) geomesa:csvimport takes a schema as well as the csv data and converts
 //    csv records to SimpleFeatures on the fly for ingest
-class CSVEndpoint extends GeoMesaScalatraServlet with FileUploadSupport with Logging with PkiAuthenticationSupport {
+class CSVEndpoint(csvUploadCache: CSVUploadCache)
+  extends GeoMesaScalatraServlet
+          with FileUploadSupport
+          with Logging
+          with PkiAuthenticationSupport {
 
   override val root: String = "csv"
 
@@ -54,8 +58,6 @@ class CSVEndpoint extends GeoMesaScalatraServlet with FileUploadSupport with Log
   }
 
   import CSVUploadCache._
-
-  val csvUploadCache = new CSVUploadCache
 
   private[this] def getUserName  = scentry.authenticate("Pki").map(_.dn)
   private[this] def getRecordTag = RecordTag(getUserName, params("csvid"))

@@ -2,16 +2,20 @@ package org.locationtech.geomesa.web.csv
 
 import java.{util => ju}
 
+import org.geoserver.catalog.{Catalog, DataStoreInfo, WorkspaceInfo}
 import org.geotools.process.factory.{DescribeParameter, DescribeProcess}
 import org.locationtech.geomesa.accumulo.csv
 import org.locationtech.geomesa.process.ImportProcess
-import org.locationtech.geomesa.web.csv.CSVUploadCache.Record
+import org.locationtech.geomesa.web.csv.CSVUploadCache.{RecordTag, Record}
+import org.springframework.security.core.Authentication
 
 @DescribeProcess(
   title = "Ingest CSV data",
   description = "Ingest the data contained in an uploaded CSV file"
 )
-class IngestCSVProcess(csvUploadCache: CSVUploadCache, importer: ImportProcess)
+class IngestCSVProcess(csvUploadCache: CSVUploadCache,
+                       importer: ImportProcess,
+                       catalog: Catalog)
   extends GeomesaCSVProcess(csvUploadCache) {
 
   def execute(
@@ -19,16 +23,6 @@ class IngestCSVProcess(csvUploadCache: CSVUploadCache, importer: ImportProcess)
                  name = "csvId",
                  description = "The temporary ID of the CSV file to ingest")
                csvId: String,
-
-               @DescribeParameter(
-                 name = "workspace",
-                 description = "Target workspace")
-               workspace: String,
-
-               @DescribeParameter(
-                 name = "store",
-                 description = "Target store")
-               store: String,
 
                @DescribeParameter(
                  name = "keywords",
@@ -51,17 +45,47 @@ class IngestCSVProcess(csvUploadCache: CSVUploadCache, importer: ImportProcess)
                  description = "The level of security to apply to this import")
                securityLevel: String
               ) = {
-    def ingest(record: Record) = {
-      val fc = csv.csvToFeatures(record.csvFile, record.hasHeader, record.schema)
-      val name = record.schema.name
-      importer.execute(fc, workspace, store, name, keywordStrs, numShards, securityLevel)
+    def wsName(userName: String) = s"${userName}_LAYERS"
+    def getUserWorkSpace(userName: String) =
+      Option(catalog.getWorkspaceByName(wsName(userName)))
+    val csvStoreName = "csvUploads"
+    def getCSVStore(workspace: WorkspaceInfo) =
+      Option(catalog.getStoreByName(workspace, csvStoreName, classOf[DataStoreInfo]))
+
+    def ingest(userAuth: Authentication, record: Record) = {
+      val userName = getUserName(userAuth)
+      val fc       = csv.csvToFeatures(record.csvFile, record.hasHeader, record.schema)
+      val name     = record.schema.name
+
+      val workspace = getUserWorkSpace(userName) match {
+        case Some(ws) => ws
+        case None     =>
+          val ws = catalog.getFactory.createWorkspace()
+          ws.setName(wsName(userName))
+          catalog.add(ws)
+          ws  // still needs userspace locking!
+      }
+
+      val store = getCSVStore(workspace) match {
+        case Some(s) => s
+        case None    =>
+          val s = catalog.getFactory.createDataStore()
+          s.setName(csvStoreName)
+          catalog.add(s)
+          s
+      }
+      importer.execute(fc, workspace.getName, store.getName, name, keywordStrs, numShards, securityLevel)
     }
 
-    val tag = getTag(csvId)
-    Option(csvUploadCache.load(tag)) match {
-      case None => false
-      case Some(record) => ingest(record)
-
+    val userAuthO = getUserAuth
+    val tag = RecordTag(userAuthO.map(getUserName), csvId)
+    val storedFeatureSchemaO = for {
+      userAuth <- userAuthO
+      record   <- Option(csvUploadCache.load(tag))
+    } yield {
+      ingest(userAuth, record)
     }
+
+    storedFeatureSchemaO.getOrElse("")  // return an empty string for a failed ingest; better ideas?
   }
 }

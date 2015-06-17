@@ -18,20 +18,17 @@ package org.locationtech.geomesa.web.csv
 
 import org.geoserver.security.xml.XMLGeoserverUser
 import org.locationtech.geomesa.process.GeomesaProcess
-import org.locationtech.geomesa.web.csv.CSVUploadCache.RecordTag
+import org.springframework.security.core.Authentication
 import org.springframework.security.core.context.SecurityContextHolder
 
 class GeomesaCSVProcess(csvUploadCache: CSVUploadCache) extends GeomesaProcess {
 
-  def getUserName: Option[String] = {
-    for {
-      auth <- Option(SecurityContextHolder.getContext.getAuthentication)
-    } yield {
-      auth.getPrincipal match {
-        case xml: XMLGeoserverUser => xml.getUsername
-        case str: String           => str.toLowerCase
-      }
+  def getUserAuth: Option[Authentication] =
+    Option(SecurityContextHolder.getContext.getAuthentication)
+
+  def getUserName(userAuth: Authentication) =
+    userAuth.getPrincipal match {
+      case xml: XMLGeoserverUser => xml.getUsername
+      case str: String           => str.toLowerCase
     }
-  }
-  def getTag(csvId: String): RecordTag = RecordTag(getUserName, csvId)
 }
