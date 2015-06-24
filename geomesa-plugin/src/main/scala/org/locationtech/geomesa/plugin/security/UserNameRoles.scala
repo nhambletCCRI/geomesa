@@ -30,11 +30,14 @@ object UserNameRoles {
   private val isUserRoleProp = "IS_USER_ROLE"
   private def isUserRole(role: GeoServerRole) = role.getProperties.getProperty("IS_USER_ROLE") == "true"
   private def userRole(username: String) = {
-    val r = new GeoServerRole(username)
+    val r = new GeoServerRole(userRoleName(username))
     r.setUserName(username)
     r.getProperties.setProperty(isUserRoleProp, "true")
     r
   }
+
+  // keep the rule for associating a user role name with a username in one place
+  def userRoleName(username: String) = username
 }
 
 import UserNameRoles.{userRole, isUserRole}

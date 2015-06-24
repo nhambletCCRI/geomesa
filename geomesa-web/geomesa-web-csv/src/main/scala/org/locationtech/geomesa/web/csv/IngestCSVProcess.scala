@@ -3,8 +3,11 @@ package org.locationtech.geomesa.web.csv
 import java.{util => ju}
 
 import org.geoserver.catalog.{Catalog, DataStoreInfo, WorkspaceInfo}
+import org.geoserver.security.AccessMode
+import org.geoserver.security.impl.{DataAccessRule, DataAccessRuleDAO}
 import org.geotools.process.factory.{DescribeParameter, DescribeProcess}
 import org.locationtech.geomesa.accumulo.csv
+import org.locationtech.geomesa.plugin.security.UserNameRoles
 import org.locationtech.geomesa.process.ImportProcess
 import org.locationtech.geomesa.web.csv.CSVUploadCache.{RecordTag, Record}
 import org.springframework.security.core.Authentication
@@ -15,7 +18,8 @@ import org.springframework.security.core.Authentication
 )
 class IngestCSVProcess(csvUploadCache: CSVUploadCache,
                        importer: ImportProcess,
-                       catalog: Catalog)
+                       catalog: Catalog,
+                       dataAccessRuleDAO: DataAccessRuleDAO)
   extends GeomesaCSVProcess(csvUploadCache) {
 
   def execute(
@@ -63,6 +67,14 @@ class IngestCSVProcess(csvUploadCache: CSVUploadCache,
           val ws = catalog.getFactory.createWorkspace()
           ws.setName(wsName(userName))
           catalog.add(ws)
+
+          // here are the data access rules to set, but where to set them?
+          val userRoleName = UserNameRoles.userRoleName(userName)
+          val readRule  = new DataAccessRule(ws.getName, DataAccessRule.ANY, AccessMode.READ,  userRoleName)
+          dataAccessRuleDAO.addRule(readRule)
+          val writeRule = new DataAccessRule(ws.getName, DataAccessRule.ANY, AccessMode.WRITE, userRoleName)
+          dataAccessRuleDAO.addRule(writeRule)
+
           ws  // still needs userspace locking!
       }
 
