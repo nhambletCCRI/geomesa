@@ -17,6 +17,23 @@
             <artifactId>scalatra_2.10</artifactId>
         </dependency>
         <dependency>
+            <groupId>org.geoserver.extension</groupId>
+            <artifactId>gs-wps-core</artifactId>
+            <scope>provided</scope>
+            <exclusions>
+                <exclusion>
+                    <!-- excluded due to license issues -->
+                    <groupId>javax.media</groupId>
+                    <artifactId>jai_core</artifactId>
+                </exclusion>
+                <exclusion>
+                    <!-- excluded due to license issues -->
+                    <groupId>javax.media</groupId>
+                    <artifactId>jai_imageio</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
             <groupId>org.locationtech.geomesa</groupId>
             <artifactId>geomesa-web-core</artifactId>
         </dependency>
