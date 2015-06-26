@@ -10,6 +10,7 @@ import org.locationtech.geomesa.accumulo.csv
 import org.locationtech.geomesa.plugin.security.UserNameRoles
 import org.locationtech.geomesa.process.ImportProcess
 import org.locationtech.geomesa.web.csv.CSVUploadCache.{RecordTag, Record}
+import org.springframework.security.authentication.AnonymousAuthenticationToken
 import org.springframework.security.core.Authentication
 
 @DescribeProcess(

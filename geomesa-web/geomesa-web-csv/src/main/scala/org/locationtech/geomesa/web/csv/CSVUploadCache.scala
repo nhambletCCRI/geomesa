@@ -48,7 +48,14 @@ class CSVUploadCache {
     records.invalidate(tag)
   }
 
-  def store(tag: RecordTag, record: Record) { records.put(tag, record) }
+  def store(tag: RecordTag, record: Record) {
+    if (records.getIfPresent(tag) != null) {
+      // we want to update, but if we just put it'll trigger a delete _after_
+      records.invalidate(tag)
+      records.cleanUp()
+    }
+    records.put(tag, record)
+  }
   def load(tag: RecordTag) = records.getIfPresent(tag)
   def clear(tag: RecordTag) { for {record <- Option(load(tag))} cleanup(tag, record) }
 }
