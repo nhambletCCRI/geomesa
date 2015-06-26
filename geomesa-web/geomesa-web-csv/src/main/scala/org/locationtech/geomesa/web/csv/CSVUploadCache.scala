@@ -33,27 +33,26 @@ import CSVUploadCache._
 class CSVUploadCache {
 
   val records: Cache[RecordTag, Record] = {
-    val removalListener = new RemovalListener[RecordTag, Record]() {
+    class RM extends RemovalListener[RecordTag, Record] {
+      var cache: Cache[RecordTag, Record] = null
       override def onRemoval(notification: RemovalNotification[RecordTag, Record]) =
-        cleanup(notification.getKey, notification.getValue)
+        if (cache != null && cache.getIfPresent(notification.getKey) == null)
+          cleanup(notification.getKey, notification.getValue)
     }
-    CacheBuilder.newBuilder()
+    val rm = new RM()
+    val c: Cache[RecordTag, Record] = CacheBuilder.newBuilder()
       .expireAfterAccess(1, TimeUnit.HOURS)
-      .removalListener(removalListener)
+      .removalListener(rm)
       .build()
+    rm.cache = c
+    c
   }
 
   private def cleanup(tag: RecordTag, record: Record) {
     record.csvFile.delete()
-    records.invalidate(tag)
   }
 
   def store(tag: RecordTag, record: Record) {
-    if (records.getIfPresent(tag) != null) {
-      // we want to update, but if we just put it'll trigger a delete _after_
-      records.invalidate(tag)
-      records.cleanUp()
-    }
     records.put(tag, record)
   }
   def load(tag: RecordTag) = records.getIfPresent(tag)

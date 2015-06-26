@@ -59,7 +59,7 @@ class CSVEndpoint(csvUploadCache: CSVUploadCache)
 
   import CSVUploadCache._
 
-  private[this] def getUserName  = scentry.authenticate("Pki").map(_.dn)
+  private[this] def getUserName  = Some(scentry.authenticate("Pki").map(_.dn).getOrElse("anonymous"))
   private[this] def getRecordTag = RecordTag(getUserName, params("csvid"))
 
   post("/") {
