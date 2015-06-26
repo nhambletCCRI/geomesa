@@ -5,7 +5,6 @@ import java.{util => ju}
 import org.geoserver.catalog.{Catalog, DataStoreInfo, WorkspaceInfo}
 import org.geoserver.security.AccessMode
 import org.geoserver.security.impl.{DataAccessRule, DataAccessRuleDAO}
-import org.geoserver.wps.gs.GeoServerProcess
 import org.geotools.process.factory.{DescribeResult, DescribeParameter, DescribeProcess}
 import org.locationtech.geomesa.accumulo.csv
 import org.locationtech.geomesa.plugin.security.UserNameRoles
@@ -21,7 +20,7 @@ class IngestCSVProcess(csvUploadCache: CSVUploadCache,
                        importer: ImportProcess,
                        catalog: Catalog,
                        dataAccessRuleDAO: DataAccessRuleDAO)
-  extends GeomesaCSVProcess(csvUploadCache) with GeoServerProcess {
+  extends GeomesaCSVProcess(csvUploadCache) {
 
   @DescribeResult(name = "layerName", description = "Name of the new featuretype, with workspace")
   def execute(
