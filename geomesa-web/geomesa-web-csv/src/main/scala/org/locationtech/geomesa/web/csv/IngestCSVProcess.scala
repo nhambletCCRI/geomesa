@@ -10,8 +10,6 @@ import org.locationtech.geomesa.accumulo.csv
 import org.locationtech.geomesa.plugin.security.UserNameRoles
 import org.locationtech.geomesa.process.ImportProcess
 import org.locationtech.geomesa.web.csv.CSVUploadCache.{RecordTag, Record}
-import org.springframework.security.authentication.AnonymousAuthenticationToken
-import org.springframework.security.core.Authentication
 
 @DescribeProcess(
   title = "Ingest CSV data",
@@ -58,8 +56,8 @@ class IngestCSVProcess(csvUploadCache: CSVUploadCache,
     def getCSVStore(workspace: WorkspaceInfo) =
       Option(catalog.getStoreByName(workspace, csvStoreName, classOf[DataStoreInfo]))
 
-    def ingest(userAuth: Authentication, record: Record) = {
-      val userName = getUserName(userAuth)
+    def ingest(userNameO: Option[String], record: Record) = {
+      val userName = userNameO.getOrElse("ANONYMOUS")
       val fc       = csv.csvToFeatures(record.csvFile, record.hasHeader, record.schema)
       val name     = record.schema.name
 
@@ -70,12 +68,13 @@ class IngestCSVProcess(csvUploadCache: CSVUploadCache,
           ws.setName(wsName(userName))
           catalog.add(ws)
 
-          // here are the data access rules to set, but where to set them?
-          val userRoleName = UserNameRoles.userRoleName(userName)
-          val readRule  = new DataAccessRule(ws.getName, DataAccessRule.ANY, AccessMode.READ,  userRoleName)
-          dataAccessRuleDAO.addRule(readRule)
-          val writeRule = new DataAccessRule(ws.getName, DataAccessRule.ANY, AccessMode.WRITE, userRoleName)
-          dataAccessRuleDAO.addRule(writeRule)
+          for (un <- userNameO) {
+            val userRoleName = UserNameRoles.userRoleName(un)
+            val readRule = new DataAccessRule(ws.getName, DataAccessRule.ANY, AccessMode.READ, userRoleName)
+            dataAccessRuleDAO.addRule(readRule)
+            val writeRule = new DataAccessRule(ws.getName, DataAccessRule.ANY, AccessMode.WRITE, userRoleName)
+            dataAccessRuleDAO.addRule(writeRule)
+          }
 
           ws  // still needs userspace locking!
       }
@@ -91,15 +90,9 @@ class IngestCSVProcess(csvUploadCache: CSVUploadCache,
       importer.execute(fc, workspace.getName, store.getName, name, keywordStrs, numShards, securityLevel)
     }
 
-    val userAuthO = getUserAuth
-    val tag = RecordTag(userAuthO.map(getUserName), csvId)
-    val storedFeatureSchemaO = for {
-      userAuth <- userAuthO
-      record   <- Option(csvUploadCache.load(tag))
-    } yield {
-      ingest(userAuth, record)
-    }
-
-    storedFeatureSchemaO.getOrElse("")  // return an empty string for a failed ingest; better ideas?
+    val userName = getUserAuth.map(getUserName)
+    val tag = RecordTag(userName, csvId)
+    Option(csvUploadCache.load(tag)).map(ingest(userName, _))
+                                    .getOrElse("")  // return an empty string for a failed ingest; better ideas?
   }
 }
